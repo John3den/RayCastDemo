@@ -4,6 +4,19 @@
 #include <stdlib.h>
 #define PI 3.1415926
 #define EPSILON 0.0001
+using namespace std;
+
+int textureRes = 8;
+int texture[] = {
+	0,0,0,0,0,0,0,0,
+	0,0,0,0,0,0,0,0,
+	0,0,0,1,1,1,0,0,
+	0,0,0,1,0,0,0,0,
+	0,0,0,1,1,0,0,0,
+	0,0,0,1,0,0,0,0,
+	0,0,0,1,0,0,0,0,
+	0,0,0,0,0,0,0,0
+};
 
 class Color
 {
@@ -20,6 +33,16 @@ public:
 		b = 0;
 	}
 };
+
+class inputState
+{
+public:
+	int w = 0;
+	int a = 0;
+	int s = 0;
+	int d = 0;
+
+}; inputState inputs;
 
 class Point
 {
@@ -45,7 +68,7 @@ public:
 	}
 };
 
-const float rotationSpeed = 0.1; // radians
+const float rotationSpeed = 0.06; // radians
 float speed = 3; // pixels
 class Player
 {
@@ -132,6 +155,7 @@ float clampAngle(float angle)
 
 void raycast()
 {
+	int hor;
 	float distance; // "true" distance between player and  first collision with a wall
 	float distanceV; // distance between player and first collision with vertical wall
 	float distanceH; // distance between player and first collision with horizontal wall
@@ -144,9 +168,10 @@ void raycast()
 	
 	for (int rays = -120; rays < 120; rays++)
 	{
-		rayAngle = clampAngle(player->lookAngle + rays*PI/720);
+		hor = 0;
+		rayAngle = clampAngle(player->lookAngle + rays * PI / 720);
 		depth = 0;
-		
+
 		raySlope = -1 / tan(rayAngle); // coordinate origin is top left -> inverted slope
 		if (rayAngle > PI) // looking up (again, inverted angles)
 		{
@@ -173,7 +198,7 @@ void raycast()
 			mapCoordX = (int)(lastCollisionX / map->blockSize);
 			mapCoordY = (int)(lastCollisionY / map->blockSize);
 			mapIndex = mapCoordY * map->sizeX + mapCoordX;
-			if (mapIndex >= map->sizeX * map->sizeY || mapIndex<0)
+			if (mapIndex >= map->sizeX * map->sizeY || mapIndex < 0)
 			{
 				depth = 8; // out of range <=> out of map
 			}
@@ -189,28 +214,28 @@ void raycast()
 			}
 		}
 		distanceH = sqrt((player->position.x - lastCollisionX) * (player->position.x - lastCollisionX) +
-						 (player->position.y - lastCollisionY) * (player->position.y - lastCollisionY));
+			(player->position.y - lastCollisionY) * (player->position.y - lastCollisionY));
 		HorCollisionX = lastCollisionX;
 		HorCollisionY = lastCollisionY;
 
 		// VERTICAL LINE INTERSECTION
 		depth = 0;
 		raySlope = -tan(rayAngle); // coordinate origin is top left -> inverted slope
-		if (rayAngle > PI/2 && rayAngle < 3*PI/2) // looking left
+		if (rayAngle > PI / 2 && rayAngle < 3 * PI / 2) // looking left
 		{
 			lastCollisionX = (float)(((int)player->position.x / map->blockSize) * map->blockSize) - EPSILON;
 			lastCollisionY = (player->position.x - lastCollisionX) * raySlope + player->position.y;
 			deltaX = -map->blockSize;
 			deltaY = -deltaX * raySlope;
 		}
-		if (rayAngle < PI/2 || rayAngle>3*PI/2) // looking right
+		if (rayAngle < PI / 2 || rayAngle>3 * PI / 2) // looking right
 		{
 			lastCollisionX = (float)(((int)player->position.x / map->blockSize) * map->blockSize) + (float)map->blockSize;
 			lastCollisionY = (player->position.x - lastCollisionX) * raySlope + player->position.y;
 			deltaX = map->blockSize;
 			deltaY = -deltaX * raySlope;
 		}
-		if (rayAngle == PI/2 || rayAngle == 3*PI/2) // looking vertically
+		if (rayAngle == PI / 2 || rayAngle == 3 * PI / 2) // looking vertically
 		{
 			lastCollisionX = player->position.x;
 			lastCollisionY = player->position.y;
@@ -237,12 +262,13 @@ void raycast()
 			}
 		}
 		distanceV = sqrt((player->position.x - lastCollisionX) * (player->position.x - lastCollisionX) +
-						 (player->position.y - lastCollisionY) * (player->position.y - lastCollisionY));
+			(player->position.y - lastCollisionY) * (player->position.y - lastCollisionY));
 		distance = distanceH < distanceV ? distanceH : distanceV;
 		if (distanceH < distanceV)
 		{
 			lastCollisionX = HorCollisionX;
 			lastCollisionY = HorCollisionY;
+			hor = 1;
 		}
 		glColor3f(1, 1, 0);
 		glLineWidth(1);
@@ -251,42 +277,95 @@ void raycast()
 		glVertex2i(lastCollisionX, lastCollisionY);
 		glEnd();
 		glColor3f(0, 0, 1);
-		if (distanceH < distanceV) // pseudo-lightning
-		{
-			glColor3f(0.3, 0.3, 1);
-		}
 		// 3d conversion
-		distance = distance *cos(player->lookAngle - rayAngle); // remove distortion
-		float stripHeight = (float)512*(float)map->blockSize/(float)distance;
-		if (stripHeight > 512)stripHeight = 512;
-		glLineWidth(2);
-		glBegin(GL_LINES);
-		glVertex2i(512+256+rays*2, 256- stripHeight/2);
-		glVertex2i(512+256+rays*2, 256+ stripHeight/2);
-		glEnd();
+		distance = distance * cos(player->lookAngle - rayAngle); // remove distortion
+		float h = (float)512 * (float)map->blockSize / (float)distance;
+		float s = h;
+		if (h > 512)
+		{
+			h = 512;
+		}
+		int texX;
+		if (hor)
+		{
+			 texX= (int)(lastCollisionX / 8.0) % 8;
+			if (rayAngle < PI) texX = 7 - texX;
+		}
+		else
+		{
+			texX = (int)(lastCollisionY / 8.0) % 8;
+			if (rayAngle > PI/2 && rayAngle<PI*3/2) texX = 7 - texX;
+		}
+
+		int texY = 0;
+		for (int y = 0; y < h; y++)
+		{
+			if (s > 512) {
+				texY = ( ((float)y  + (s-h)/2)/s ) *textureRes;
+			}	
+			else
+			texY = (int)((float)y / (h) * textureRes);
+			glBegin(GL_POINTS);
+			glColor3f(texture[ texY* textureRes + texX],0,0);
+			glVertex2i(512 + 256 + rays * 2, 256 + y - h/2);
+			glEnd();
+		}
 	}
 
 }
 
-void ProcessInput(unsigned char key, int x, int y)
+void keyDown(unsigned char key, int x, int y)
 {
-	if (key == 'a') 
+	if (key == 'w') { inputs.w = 1; }
+	if (key == 'a') { inputs.a = 1; }
+	if (key == 's') { inputs.s = 1; }
+	if (key == 'd') { inputs.d = 1; }
+	glutPostRedisplay();
+}
+void keyUp(unsigned char key, int x, int y)
+{
+	if (key == 'w') { inputs.w = 0;  }
+	if (key == 'a') { inputs.a = 0; }
+	if (key == 's') { inputs.s = 0; }
+	if (key == 'd') { inputs.d = 0; }
+	glutPostRedisplay();
+}
+
+
+float getFPS()
+{
+	static float prevFrame;
+	float thisFrame;
+	float fps;
+	thisFrame = glutGet(GLUT_ELAPSED_TIME);
+	fps = thisFrame - prevFrame;
+	prevFrame = thisFrame;
+	cout << fps << endl;
+	return fps;
+}
+
+
+void ProcessInput()
+{
+	float delta = getFPS()/10;
+	if (inputs.a) 
 	{
-		player->lookAngle = clampAngle(player->lookAngle - rotationSpeed);
+		
+		player->lookAngle = clampAngle(player->lookAngle - rotationSpeed*delta);
 		player->lookDirection = Point(cos(player->lookAngle), sin(player->lookAngle));
 	}
-	if (key == 'd')
+	if (inputs.d)
 	{
-		player->lookAngle = clampAngle(player->lookAngle + rotationSpeed);
+		player->lookAngle = clampAngle(player->lookAngle + rotationSpeed*delta);
 		player->lookDirection = Point(cos(player->lookAngle), sin(player->lookAngle));
 	}
-	if (key == 'w')
+	if (inputs.w)
 	{
-		player->position += player->lookDirection * speed;
+		player->position += player->lookDirection * speed * delta;
 	}
-	if (key == 's')
+	if (inputs.s)
 	{
-		player->position += player->lookDirection * (-speed);
+		player->position += player->lookDirection * (-speed)*delta;
 	}
 	glutPostRedisplay();
 }
@@ -312,8 +391,11 @@ void DrawBorder()
 	glVertex2i(1024, 512-8);
 	glEnd();
 }
+
+
 void Display() 
 {
+	ProcessInput();
 	glClear(GL_COLOR_BUFFER_BIT);
 	map->Draw();
 	player->Draw();
@@ -344,7 +426,8 @@ int main(int argc, char** argv)
 	glutInitWindowPosition(100, 200);
 	glutCreateWindow("HLDemake");
 	glutDisplayFunc(Display);
-	glutKeyboardFunc(ProcessInput);
+	glutKeyboardFunc(keyDown);
+	glutKeyboardUpFunc(keyUp);
 	Initialize();
 	glutMainLoop();
 	return 0;
