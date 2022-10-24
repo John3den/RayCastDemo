@@ -7,17 +7,27 @@
 using namespace std;
 
 int textureRes = 8;
-int texture[] = {
-	0,0,0,0,0,0,0,0,
-	0,0,0,0,0,0,0,0,
-	0,0,0,1,1,1,0,0,
-	0,0,0,1,0,0,0,0,
-	0,0,0,1,1,0,0,0,
-	0,0,0,1,0,0,0,0,
-	0,0,0,1,0,0,0,0,
-	0,0,0,0,0,0,0,0
+int texture1[] = {
+	1,0,0,0,1,0,0,1,
+	1,1,1,1,1,1,1,1,
+	0,0,0,1,0,0,0,1,
+	1,1,1,1,1,1,1,1,
+	1,0,0,0,1,0,0,0,
+	1,1,1,1,1,1,1,1,
+	0,0,0,1,0,0,0,1,
+	1,1,1,1,1,1,1,1
 };
 
+int texture2[] = {
+	1,1,1,1,1,1,1,1,
+	1,0,0,0,0,0,0,1,
+	1,0,0,0,0,0,0,1,
+	1,0,0,0,1,1,0,1,
+	1,0,0,0,0,0,0,1,
+	1,0,0,0,0,0,0,1,
+	1,0,0,0,0,0,0,1,
+	1,1,1,1,1,1,1,1
+};
 class Color
 {
 public:
@@ -68,6 +78,19 @@ public:
 	}
 };
 
+
+
+class Enemy
+{
+	int x, y;
+	float lookAngle = 0;
+	Enemy(int spawnX, int spawnY)
+	{
+		x = spawnX;
+		y = spawnY;
+	}
+};
+
 const float rotationSpeed = 0.06; // radians
 float speed = 3; // pixels
 class Player
@@ -87,7 +110,7 @@ public:
 	{
 		glColor3f(color.r, color.g, color.b);
 		glPointSize(8);
-		glBegin(GL_POINTS);
+		glBegin(GL_POINTS);		
 		glVertex2i(position.x, position.y);
 		glEnd();
 	}
@@ -97,7 +120,7 @@ Player* player;
 int layout[] = {1,1,1,1,1,1,1,1,
 				1,0,0,0,0,0,0,1,
 				1,0,0,0,0,0,0,1,
-				1,0,0,0,0,1,1,1,
+				1,0,0,0,0,2,1,1,
 				1,0,0,0,0,0,0,1,
 				1,0,0,0,0,0,0,1,
 				1,0,0,0,0,0,0,1,
@@ -120,6 +143,10 @@ public:
 				if (layout[i*sizeX +j] == 1)
 				{
 					glColor3f(0.3, 0.3, 1);
+				}
+				else if (layout[i * sizeX + j] == 2)
+				{
+					glColor3f(0.6, 0.3, 1);
 				}
 				else
 				{
@@ -153,123 +180,131 @@ float clampAngle(float angle)
 	return angle;
 }
 
-void raycast()
+float raycast(Point origin, float angle, float& lastCollisionX, float& lastCollisionY, int& hor, int& wiv)
 {
-	int hor;
 	float distance; // "true" distance between player and  first collision with a wall
 	float distanceV; // distance between player and first collision with vertical wall
 	float distanceH; // distance between player and first collision with horizontal wall
-	float rayAngle;
-	float lastCollisionX, lastCollisionY, deltaX, deltaY;
+	float deltaX, deltaY;
 	int depth; // we can get maximum of MAX(map->sizeX, map->sizeY) amount of intersections with the grid
 	float raySlope;
 	int mapCoordX, mapCoordY, mapIndex;
 	int HorCollisionX, HorCollisionY; // remember coords of first collision with horizontal line in case its the nearest one
-	
+	int wih = 0;
+	hor = 0;
+	depth = 0;
+	raySlope = -1 / tan(angle); // coordinate origin is top left -> inverted slope
+	if (angle > PI) // looking up (again, inverted angles)
+	{
+		lastCollisionY = (float)(((int)player->position.y / map->blockSize) * map->blockSize) - EPSILON;
+		lastCollisionX = (player->position.y - lastCollisionY) * raySlope + player->position.x;
+		deltaY = -map->blockSize;
+		deltaX = -deltaY * raySlope;
+	}
+	if (angle < PI) // looking down
+	{
+		lastCollisionY = (float)(((int)player->position.y / map->blockSize) * map->blockSize) + (float)map->blockSize;
+		lastCollisionX = (player->position.y - lastCollisionY) * raySlope + player->position.x;
+		deltaY = map->blockSize;
+		deltaX = -deltaY * raySlope;
+	}
+	if (angle == PI || angle == 0) // looking horizontally
+	{
+		lastCollisionY = player->position.y;
+		lastCollisionX = player->position.x;
+		depth = 8; // no expected collisions
+	}
+	while (depth < 8)
+	{
+		mapCoordX = (int)(lastCollisionX / map->blockSize);
+		mapCoordY = (int)(lastCollisionY / map->blockSize);
+		mapIndex = mapCoordY * map->sizeX + mapCoordX;
+		if (mapIndex >= map->sizeX * map->sizeY || mapIndex < 0)
+		{
+			depth = 8; // out of range <=> out of map
+		}
+		else if (mapIndex < map->sizeX * map->sizeY && layout[mapIndex] !=0)
+		{
+			wih = layout[mapIndex];
+			depth = 8; // ray hits wall
+		}
+		else
+		{
+			lastCollisionX += deltaX;
+			lastCollisionY += deltaY;
+			depth++;
+		}
+	}
+	distanceH = sqrt((player->position.x - lastCollisionX) * (player->position.x - lastCollisionX) +
+		(player->position.y - lastCollisionY) * (player->position.y - lastCollisionY));
+	HorCollisionX = lastCollisionX;
+	HorCollisionY = lastCollisionY;
+
+	// VERTICAL LINE INTERSECTION
+	depth = 0;
+	raySlope = -tan(angle); // coordinate origin is top left -> inverted slope
+	if (angle > PI / 2 && angle < 3 * PI / 2) // looking left
+	{
+		lastCollisionX = (float)(((int)player->position.x / map->blockSize) * map->blockSize) - EPSILON;
+		lastCollisionY = (player->position.x - lastCollisionX) * raySlope + player->position.y;
+		deltaX = -map->blockSize;
+		deltaY = -deltaX * raySlope;
+	}
+	if (angle < PI / 2 || angle>3 * PI / 2) // looking right
+	{
+		lastCollisionX = (float)(((int)player->position.x / map->blockSize) * map->blockSize) + (float)map->blockSize;
+		lastCollisionY = (player->position.x - lastCollisionX) * raySlope + player->position.y;
+		deltaX = map->blockSize;
+		deltaY = -deltaX * raySlope;
+	}
+	if (angle == PI / 2 || angle == 3 * PI / 2) // looking vertically
+	{
+		lastCollisionX = player->position.x;
+		lastCollisionY = player->position.y;
+		depth = 8; // no expected collisions
+	}
+	while (depth < 8)
+	{
+		mapCoordY = (int)(lastCollisionY / map->blockSize);
+		mapCoordX = (int)(lastCollisionX / map->blockSize);
+		mapIndex = mapCoordY * map->sizeX + mapCoordX;
+		if (mapIndex >= map->sizeX * map->sizeY || mapIndex < 0)
+		{
+			depth = 8;
+		}
+		else if (mapIndex < map->sizeX * map->sizeY && layout[mapIndex] != 0)
+		{
+			depth = 8;
+			wiv = layout[mapIndex];
+		}
+		else
+		{
+			lastCollisionX += deltaX;
+			lastCollisionY += deltaY;
+			depth++;
+		}
+	}
+	distanceV = sqrt((player->position.x - lastCollisionX) * (player->position.x - lastCollisionX) +
+		(player->position.y - lastCollisionY) * (player->position.y - lastCollisionY));
+	distance = distanceH < distanceV ? distanceH : distanceV;
+	if (distanceH < distanceV)
+	{
+		wiv = wih;
+		lastCollisionX = HorCollisionX;
+		lastCollisionY = HorCollisionY;
+		hor = 1;
+	}
+	return distance;
+}
+
+void render()
+{
 	for (int rays = -120; rays < 120; rays++)
 	{
-		hor = 0;
-		rayAngle = clampAngle(player->lookAngle + rays * PI / 720);
-		depth = 0;
-
-		raySlope = -1 / tan(rayAngle); // coordinate origin is top left -> inverted slope
-		if (rayAngle > PI) // looking up (again, inverted angles)
-		{
-			lastCollisionY = (float)(((int)player->position.y / map->blockSize) * map->blockSize) - EPSILON;
-			lastCollisionX = (player->position.y - lastCollisionY) * raySlope + player->position.x;
-			deltaY = -map->blockSize;
-			deltaX = -deltaY * raySlope;
-		}
-		if (rayAngle < PI) // looking down
-		{
-			lastCollisionY = (float)(((int)player->position.y / map->blockSize) * map->blockSize) + (float)map->blockSize;
-			lastCollisionX = (player->position.y - lastCollisionY) * raySlope + player->position.x;
-			deltaY = map->blockSize;
-			deltaX = -deltaY * raySlope;
-		}
-		if (rayAngle == PI || rayAngle == 0) // looking horizontally
-		{
-			lastCollisionY = player->position.y;
-			lastCollisionX = player->position.x;
-			depth = 8; // no expected collisions
-		}
-		while (depth < 8)
-		{
-			mapCoordX = (int)(lastCollisionX / map->blockSize);
-			mapCoordY = (int)(lastCollisionY / map->blockSize);
-			mapIndex = mapCoordY * map->sizeX + mapCoordX;
-			if (mapIndex >= map->sizeX * map->sizeY || mapIndex < 0)
-			{
-				depth = 8; // out of range <=> out of map
-			}
-			else if (mapIndex < map->sizeX * map->sizeY && layout[mapIndex] == 1)
-			{
-				depth = 8; // ray hits wall
-			}
-			else
-			{
-				lastCollisionX += deltaX;
-				lastCollisionY += deltaY;
-				depth++;
-			}
-		}
-		distanceH = sqrt((player->position.x - lastCollisionX) * (player->position.x - lastCollisionX) +
-			(player->position.y - lastCollisionY) * (player->position.y - lastCollisionY));
-		HorCollisionX = lastCollisionX;
-		HorCollisionY = lastCollisionY;
-
-		// VERTICAL LINE INTERSECTION
-		depth = 0;
-		raySlope = -tan(rayAngle); // coordinate origin is top left -> inverted slope
-		if (rayAngle > PI / 2 && rayAngle < 3 * PI / 2) // looking left
-		{
-			lastCollisionX = (float)(((int)player->position.x / map->blockSize) * map->blockSize) - EPSILON;
-			lastCollisionY = (player->position.x - lastCollisionX) * raySlope + player->position.y;
-			deltaX = -map->blockSize;
-			deltaY = -deltaX * raySlope;
-		}
-		if (rayAngle < PI / 2 || rayAngle>3 * PI / 2) // looking right
-		{
-			lastCollisionX = (float)(((int)player->position.x / map->blockSize) * map->blockSize) + (float)map->blockSize;
-			lastCollisionY = (player->position.x - lastCollisionX) * raySlope + player->position.y;
-			deltaX = map->blockSize;
-			deltaY = -deltaX * raySlope;
-		}
-		if (rayAngle == PI / 2 || rayAngle == 3 * PI / 2) // looking vertically
-		{
-			lastCollisionX = player->position.x;
-			lastCollisionY = player->position.y;
-			depth = 8; // no expected collisions
-		}
-		while (depth < 8)
-		{
-			mapCoordY = (int)(lastCollisionY / map->blockSize);
-			mapCoordX = (int)(lastCollisionX / map->blockSize);
-			mapIndex = mapCoordY * map->sizeX + mapCoordX;
-			if (mapIndex >= map->sizeX * map->sizeY || mapIndex < 0)
-			{
-				depth = 8;
-			}
-			else if (mapIndex < map->sizeX * map->sizeY && layout[mapIndex] == 1)
-			{
-				depth = 8;
-			}
-			else
-			{
-				lastCollisionX += deltaX;
-				lastCollisionY += deltaY;
-				depth++;
-			}
-		}
-		distanceV = sqrt((player->position.x - lastCollisionX) * (player->position.x - lastCollisionX) +
-			(player->position.y - lastCollisionY) * (player->position.y - lastCollisionY));
-		distance = distanceH < distanceV ? distanceH : distanceV;
-		if (distanceH < distanceV)
-		{
-			lastCollisionX = HorCollisionX;
-			lastCollisionY = HorCollisionY;
-			hor = 1;
-		}
+		float rayAngle = clampAngle(player->lookAngle + rays * PI / 720);
+		float lastCollisionX, lastCollisionY;
+		int hor, wiv;
+		float distance = raycast(player->position, rayAngle, lastCollisionX, lastCollisionY, hor ,wiv);
 		glColor3f(1, 1, 0);
 		glLineWidth(1);
 		glBegin(GL_LINES);
@@ -288,31 +323,62 @@ void raycast()
 		int texX;
 		if (hor)
 		{
-			 texX= (int)(lastCollisionX / 8.0) % 8;
+			texX = (int)(lastCollisionX / 8.0) % 8;
 			if (rayAngle < PI) texX = 7 - texX;
 		}
 		else
 		{
 			texX = (int)(lastCollisionY / 8.0) % 8;
-			if (rayAngle > PI/2 && rayAngle<PI*3/2) texX = 7 - texX;
+			if (rayAngle > PI / 2 && rayAngle < PI * 3 / 2) texX = 7 - texX;
 		}
-
 		int texY = 0;
-		for (int y = 0; y < h; y++)
+		float shade = hor * 0.5 + 0.5;
+		for(int y = 0; y < h; y++)
 		{
 			if (s > 512) {
-				texY = ( ((float)y  + (s-h)/2)/s ) *textureRes;
-			}	
+				texY = (((float)y + (s - h) / 2) / s) * textureRes;
+			}
 			else
-			texY = (int)((float)y / (h) * textureRes);
+				texY = (int)((float)y / (h)*textureRes);
 			glBegin(GL_POINTS);
-			glColor3f(texture[ texY* textureRes + texX],0,0);
-			glVertex2i(512 + 256 + rays * 2, 256 + y - h/2);
+			if (wiv == 1)
+			{
+				
+				if (texture1[texY * textureRes + texX])
+					glColor3f(0.2 * shade, 0.2 * shade, 0.2 * shade);
+				else
+					glColor3f(0.4 * shade, 0.3 * shade, 0.2 * shade);
+			}
+			else 
+			{
+				if (texture2[texY * textureRes + texX])
+					glColor3f(0.6 * shade, 0.5 * shade, 0.3 * shade);
+				else
+					glColor3f(0.5 * shade, 0.3 * shade, 0.2 * shade);
+			}
+				
+			glVertex2i(512 + 256 + rays * 2, 256 + y - h / 2);
+			glEnd();
+		}
+
+		for (int y = h; y < 512; y++)
+		{
+			glBegin(GL_POINTS);
+			glColor3f(0.3, 0.3, 0.3);
+			glVertex2i(512 + 256 + rays * 2, 256 + y - h / 2);
+			glEnd();
+		}
+
+		for (int y = 0; y < 256 - h / 2; y++)
+		{
+			glBegin(GL_POINTS);
+			glColor3f(0.3, 0.3, 0.7);
+			glVertex2i(512 + 256 + rays * 2, y);
 			glEnd();
 		}
 	}
-
 }
+
 
 void keyDown(unsigned char key, int x, int y)
 {
@@ -330,6 +396,7 @@ void keyUp(unsigned char key, int x, int y)
 	if (key == 'd') { inputs.d = 0; }
 	glutPostRedisplay();
 }
+
 
 
 float getFPS()
@@ -399,7 +466,8 @@ void Display()
 	glClear(GL_COLOR_BUFFER_BIT);
 	map->Draw();
 	player->Draw();
-	raycast();
+	render();
+
 	DrawBorder();
 	glFlush();
 }
